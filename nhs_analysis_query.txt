@@ -1,0 +1,150 @@
+/* =====================================================================
+   NHS Prescribing Analytics — ABC/XYZ Inventory Risk Analysis
+   Source: NHSBSA Prescription Cost Analysis (PCA), Jan-Jul 2026
+   Written for SQLite (DB Browser for SQLite)
+   ===================================================================== */
+
+
+/* -----------------------------------------------------------------------
+   DATA CLEANING
+   ----------------------------------------------------------------------- */
+
+-- Fix: CSV import did not recognise headers, leaving columns as field1-field27
+-- with header text imported as literal data rows. Renamed all 27 columns:
+ALTER TABLE prescribing RENAME COLUMN field1 TO YEAR_MONTH;
+ALTER TABLE prescribing RENAME COLUMN field2 TO REGION_NAME;
+ALTER TABLE prescribing RENAME COLUMN field3 TO REGION_CODE;
+ALTER TABLE prescribing RENAME COLUMN field4 TO ICB_NAME;
+ALTER TABLE prescribing RENAME COLUMN field5 TO ICB_CODE;
+ALTER TABLE prescribing RENAME COLUMN field6 TO DISPENSER_ACCOUNT_TYPE;
+ALTER TABLE prescribing RENAME COLUMN field7 TO BNF_PRESENTATION_CODE;
+ALTER TABLE prescribing RENAME COLUMN field8 TO BNF_PRESENTATION_NAME;
+ALTER TABLE prescribing RENAME COLUMN field9 TO SNOMED_CODE;
+ALTER TABLE prescribing RENAME COLUMN field10 TO SUPPLIER_NAME;
+ALTER TABLE prescribing RENAME COLUMN field11 TO UNIT_OF_MEASURE;
+ALTER TABLE prescribing RENAME COLUMN field12 TO GENERIC_BNF_EQUIVALENT_CODE;
+ALTER TABLE prescribing RENAME COLUMN field13 TO GENERIC_BNF_EQUIVALENT_NAME;
+ALTER TABLE prescribing RENAME COLUMN field14 TO BNF_CHEMICAL_SUBSTANCE_CODE;
+ALTER TABLE prescribing RENAME COLUMN field15 TO BNF_CHEMICAL_SUBSTANCE;
+ALTER TABLE prescribing RENAME COLUMN field16 TO BNF_PARAGRAPH_CODE;
+ALTER TABLE prescribing RENAME COLUMN field17 TO BNF_PARAGRAPH;
+ALTER TABLE prescribing RENAME COLUMN field18 TO BNF_SECTION_CODE;
+ALTER TABLE prescribing RENAME COLUMN field19 TO BNF_SECTION;
+ALTER TABLE prescribing RENAME COLUMN field20 TO BNF_CHAPTER_CODE;
+ALTER TABLE prescribing RENAME COLUMN field21 TO BNF_CHAPTER;
+ALTER TABLE prescribing RENAME COLUMN field22 TO PREP_CLASS;
+ALTER TABLE prescribing RENAME COLUMN field23 TO PRESCRIBED_PREP_CLASS;
+ALTER TABLE prescribing RENAME COLUMN field24 TO ITEMS;
+ALTER TABLE prescribing RENAME COLUMN field25 TO TOTAL_QUANTITY;
+ALTER TABLE prescribing RENAME COLUMN field26 TO NIC;
+ALTER TABLE prescribing RENAME COLUMN field27 TO PHARMACY_ADVANCED_SERVICE;
+
+-- Remove the 7 stray rows where the header text was imported as data
+DELETE FROM prescribing WHERE YEAR_MONTH = 'YEAR_MONTH';
+
+-- Fix: 72 distinct ICB names found instead of expected ~42-48, due to a real
+-- NHS England ICB merger (12 ICBs merged into 6, effective 1 April 2026)
+-- mid-way through the dataset's time span. Build a cleaned column stripping
+-- the transitional "(C 01-Apr-26)" style suffix:
+ALTER TABLE prescribing ADD COLUMN ICB_NAME_CLEAN TEXT;
+
+UPDATE prescribing
+SET ICB_NAME_CLEAN = TRIM(
+    CASE
+        WHEN INSTR(ICB_NAME, ' (C ') > 0
+        THEN SUBSTR(ICB_NAME, 1, INSTR(ICB_NAME, ' (C ') - 1)
+        ELSE ICB_NAME
+    END
+);
+
+
+/* -----------------------------------------------------------------------
+   DATA QUALITY CHECK
+   ----------------------------------------------------------------------- */
+SELECT
+    SUM(CASE WHEN SUPPLIER_NAME IS NULL OR SUPPLIER_NAME = '' THEN 1 ELSE 0 END) AS blank_supplier,
+    SUM(CASE WHEN NIC IS NULL OR NIC = '' THEN 1 ELSE 0 END) AS blank_nic,
+    SUM(CASE WHEN TOTAL_QUANTITY IS NULL OR TOTAL_QUANTITY = '' OR TOTAL_QUANTITY = '0' THEN 1 ELSE 0 END) AS zero_quantity,
+    COUNT(DISTINCT BNF_SECTION) AS unique_sections,
+    COUNT(DISTINCT BNF_CHAPTER) AS unique_chapters,
+    COUNT(DISTINCT ICB_NAME_CLEAN) AS unique_icbs_clean
+FROM prescribing;
+
+
+/* -----------------------------------------------------------------------
+   ABC + XYZ COMBINED CLASSIFICATION (the core analysis)
+   ----------------------------------------------------------------------- */
+WITH section_revenue AS (
+    SELECT BNF_SECTION, SUM(CAST(NIC AS REAL)) AS total_nic
+    FROM prescribing
+    GROUP BY BNF_SECTION
+),
+section_abc AS (
+    SELECT BNF_SECTION, total_nic,
+           CASE NTILE(3) OVER (ORDER BY total_nic DESC)
+                WHEN 1 THEN 'A' WHEN 2 THEN 'B' ELSE 'C' END AS abc_class
+    FROM section_revenue
+),
+monthly_demand AS (
+    SELECT BNF_SECTION, YEAR_MONTH, SUM(CAST(TOTAL_QUANTITY AS REAL)) AS monthly_quantity
+    FROM prescribing
+    GROUP BY BNF_SECTION, YEAR_MONTH
+),
+demand_stats AS (
+    SELECT BNF_SECTION,
+           AVG(monthly_quantity) AS avg_q,
+           SQRT(AVG(monthly_quantity*monthly_quantity) - AVG(monthly_quantity)*AVG(monthly_quantity)) AS stdev_q
+    FROM monthly_demand
+    GROUP BY BNF_SECTION
+    HAVING AVG(monthly_quantity) >= 1000   -- exclude low-volume noise
+),
+section_xyz AS (
+    SELECT BNF_SECTION,
+           ROUND(stdev_q/avg_q, 2) AS coefficient_of_variation,
+           CASE WHEN stdev_q/avg_q < 0.15 THEN 'X'
+                WHEN stdev_q/avg_q < 0.30 THEN 'Y'
+                ELSE 'Z' END AS xyz_class
+    FROM demand_stats
+)
+SELECT
+    a.abc_class,
+    x.xyz_class,
+    COUNT(*) AS num_categories,
+    ROUND(SUM(a.total_nic), 0) AS total_spend
+FROM section_abc a
+JOIN section_xyz x ON a.BNF_SECTION = x.BNF_SECTION
+GROUP BY a.abc_class, x.xyz_class
+ORDER BY a.abc_class, x.xyz_class;
+
+
+/* -----------------------------------------------------------------------
+   FINDING: the single AX category (high spend + unpredictable demand)
+   ----------------------------------------------------------------------- */
+-- (same CTE chain as above, filtered to the one category of interest)
+-- Result: "Vaccines and antisera", £29.8M, coefficient of variation 0.50
+
+
+/* -----------------------------------------------------------------------
+   REGIONAL VALIDATION: is vaccine spend concentrated in specific ICBs?
+   ----------------------------------------------------------------------- */
+SELECT
+    ICB_NAME_CLEAN,
+    SUM(CAST(NIC AS REAL)) AS total_nic,
+    RANK() OVER (ORDER BY SUM(CAST(NIC AS REAL)) DESC) AS spend_rank
+FROM prescribing
+WHERE BNF_SECTION = 'Vaccines and antisera'
+GROUP BY ICB_NAME_CLEAN
+ORDER BY total_nic DESC;
+
+
+/* -----------------------------------------------------------------------
+   MONTHLY TREND for the headline category
+   ----------------------------------------------------------------------- */
+SELECT
+    YEAR_MONTH,
+    SUM(CAST(TOTAL_QUANTITY AS REAL)) AS monthly_quantity,
+    SUM(CAST(NIC AS REAL)) AS monthly_spend
+FROM prescribing
+WHERE BNF_SECTION = 'Vaccines and antisera'
+GROUP BY YEAR_MONTH
+ORDER BY YEAR_MONTH;
