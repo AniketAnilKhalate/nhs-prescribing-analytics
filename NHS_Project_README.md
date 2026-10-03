@@ -1,5 +1,5 @@
 'Full database (1.73GB): see Releases → v1.0.0'
-# NHS Prescribing Analytics — ABC/XYZ Inventory Risk Analysis
+# NHS Prescribing Analytics - ABC/XYZ Inventory Risk Analysis
 
 A real-data analytics project identifying which NHS medicine categories combine
 **high spend** with **unpredictable demand** — the segment where forecasting
@@ -97,7 +97,12 @@ standard trailing-average forecasting.
 
 ## Files
 
-- `nhs_prescribing.db` — SQLite database (full cleaned dataset)
+- `nhs_prescribing.db` - SQLite database (full cleaned dataset)
 - `abc_xyz_summary.xlsx`, `vaccines_regional.xlsx`, `vaccines_monthly_trend.xlsx`
   — exported query results feeding the dashboard
-- `NHS_Prescribing_Dashboard.pbix` — Power BI dashboard
+- `NHS_Prescribing_Dashboard.pbix` - Power BI dashboard
+
+<img width="1206" height="658" alt="image" src="https://github.com/user-attachments/assets/31b210d4-a8f0-498c-b0c1-d60dbf4e91e0" />
+
+
+
