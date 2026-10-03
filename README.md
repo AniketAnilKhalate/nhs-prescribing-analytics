@@ -1,4 +1,6 @@
-# NHS Prescribing Analytics — Inventory Risk Management & Supply Chain Optimization
+'Full database (1.73GB): see Releases → v1.0.0'
+
+# NHS Prescribing Analytics - Inventory Risk Management & Supply Chain Optimization
 
 A real-data analytics project identifying high-risk, volatile NHS medicine categories and engineering a decentralized vs. centralized inventory optimization model — **saving a theoretical 85.6% in buffer safety stock** — using genuine NHS open data, advanced SQL, and Power BI.
 
@@ -89,8 +91,12 @@ This confirms that the 85.6% inventory savings dividend is a fixed, unchanging p
 
 ## Inventory Registry & Artifacts
 
-* `nhs_prescribing.db` — Cleaned, schema-corrected SQLite warehouse (1.73 GB).
-* `abc_xyz_summary.xlsx` — Classified product tier outputs feeding the core matrix.
-* `network_optimization_summary.xlsx` — Core mathematical simulation model evaluating localized safety stocks against centralized infrastructure.
-* `vaccines_regional.xlsx` & `vaccines_monthly_trend.xlsx` — Downstream granular datasets powering regional geographic trends.
-* `NHS_Prescribing_Dashboard.pbix` — Interactive dashboard file ready for deployment.
+* `nhs_prescribing.db` - Cleaned, schema-corrected SQLite warehouse (1.73 GB).
+* `abc_xyz_summary.xlsx` - Classified product tier outputs feeding the core matrix.
+* `network_optimization_summary.xlsx` - Core mathematical simulation model evaluating localized safety stocks against centralized infrastructure.
+* `vaccines_regional.xlsx` & `vaccines_monthly_trend.xlsx` - Downstream granular datasets powering regional geographic trends.
+* `NHS_Prescribing_Dashboard.pbix` - Interactive dashboard file ready for deployment.
+
+<img width="1203" height="671" alt="image" src="https://github.com/user-attachments/assets/99b7d1c9-c7d0-4986-a817-db1952c2651c" />
+<img width="1198" height="676" alt="image" src="https://github.com/user-attachments/assets/20f30067-7120-4de1-9cf4-9eda9da9d932" />
+
